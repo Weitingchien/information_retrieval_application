@@ -10,7 +10,7 @@ const client = require('./elasticsearch/connection'); //Elasticsearch: 全文字
 const app = express();
 
 const corsOptions = {
-  origin: ['http://127.0.0.1:5173'],
+  origin: ['http://localhost:5173'],
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS'
 };
 
@@ -21,9 +21,15 @@ const crawler = async () => {
     const movies = await axios.get(
       'https://www.vscinemas.com.tw/vsweb/film/index.aspx'
     );
-    const data = [];
+
     const $ = cheerio.load(movies.data);
     const movieList = $('.movieList li');
+    const getAllMovies = await client.search({
+      index: 'movies',
+      size: 100,
+      query: { match_all: {} }
+    });
+
     for (let i = 0; i < movieList.length; i++) {
       const link = movieList.eq(i).find('figure a').attr('href');
       const title = movieList.eq(i).find('.infoArea h2').text();
@@ -36,14 +42,21 @@ const crawler = async () => {
         time,
         source: 'vieshow'
       };
-      data.push(movie);
-      await client
-        .index({
+      if (getAllMovies.hits.hits.length >= 1) {
+        await client.update({
           index: 'movies',
           id: i,
-          body: movie
-        })
-        .catch(console.log);
+          newBody: movie
+        });
+      } else {
+        await client
+          .index({
+            index: 'movies',
+            id: i,
+            body: movie
+          })
+          .catch(console.log);
+      }
     }
   } catch (err) {
     console.log(err);
@@ -61,6 +74,7 @@ app.get('/api/search/all', async (req, res) => {
     size: 100,
     query: { match_all: {} }
   });
+  console.log(data.hits.hits);
   res.send(data);
 });
 
